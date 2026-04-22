@@ -1,16 +1,14 @@
 #include <iostream>
-#include <fstream>
+#include <cstdio>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <cstring>
-#include <unordered_map>
-#include <map>
 
 using namespace std;
 
 const int MAX_INDEX_LEN = 64;
-const int NUM_BUCKETS = 20;  // Max 20 files allowed
+const int NUM_BUCKETS = 20;
 
 struct Record {
     char index[MAX_INDEX_LEN + 1];
@@ -28,7 +26,6 @@ struct Record {
 };
 
 int getBucket(const string& index) {
-    // Simple hash to get bucket 0-19
     unsigned int hash = 0;
     for (char c : index) {
         hash = hash * 31 + c;
@@ -42,32 +39,39 @@ string getFilename(int bucket) {
 
 class FileStorage {
 private:
-    // For each operation, we load bucket into memory, process, then save
     void loadBucket(int bucket, vector<Record>& records) {
         records.clear();
         string filename = getFilename(bucket);
-        ifstream file(filename, ios::binary | ios::ate);
+        FILE* file = fopen(filename.c_str(), "rb");
         if (!file) return;
 
-        streamsize fileSize = file.tellg();
-        if (fileSize <= 0) return;
+        fseek(file, 0, SEEK_END);
+        long fileSize = ftell(file);
+        fseek(file, 0, SEEK_SET);
 
-        file.seekg(0, ios::beg);
-        size_t numRecords = fileSize / sizeof(Record);
-        records.reserve(numRecords);
+        if (fileSize > 0) {
+            size_t numRecords = fileSize / sizeof(Record);
+            records.reserve(numRecords);
 
-        Record rec;
-        while (file.read(reinterpret_cast<char*>(&rec), sizeof(Record))) {
-            records.push_back(rec);
+            Record rec;
+            while (fread(&rec, sizeof(Record), 1, file) == 1) {
+                records.push_back(rec);
+            }
         }
+
+        fclose(file);
     }
 
     void saveBucket(int bucket, const vector<Record>& records) {
         string filename = getFilename(bucket);
-        ofstream file(filename, ios::binary | ios::trunc);
+        FILE* file = fopen(filename.c_str(), "wb");
+        if (!file) return;
+
         for (const auto& rec : records) {
-            file.write(reinterpret_cast<const char*>(&rec), sizeof(Record));
+            fwrite(&rec, sizeof(Record), 1, file);
         }
+
+        fclose(file);
     }
 
 public:
@@ -76,14 +80,12 @@ public:
         vector<Record> records;
         loadBucket(bucket, records);
 
-        // Check if already exists
-        for (auto& rec : records) {
+        for (const auto& rec : records) {
             if (rec.valid == 1 && strcmp(rec.index, index.c_str()) == 0 && rec.value == value) {
-                return;  // Already exists
+                return;
             }
         }
 
-        // Add new record
         records.push_back(Record(index, value));
         saveBucket(bucket, records);
     }
@@ -95,12 +97,11 @@ public:
 
         for (auto& rec : records) {
             if (rec.valid == 1 && strcmp(rec.index, index.c_str()) == 0 && rec.value == value) {
-                rec.valid = 0;  // Mark as deleted
+                rec.valid = 0;
                 saveBucket(bucket, records);
                 return;
             }
         }
-        // Not found, nothing to do
     }
 
     vector<int> find(const string& index) {
@@ -109,11 +110,8 @@ public:
         loadBucket(bucket, records);
 
         vector<int> result;
-        // Reserve space for potential matches
-        result.reserve(records.size() / 10);  // Heuristic
-
         for (const auto& rec : records) {
-            if (rec.valid && strcmp(rec.index, index.c_str()) == 0) {
+            if (rec.valid == 1 && strcmp(rec.index, index.c_str()) == 0) {
                 result.push_back(rec.value);
             }
         }
