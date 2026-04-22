@@ -157,6 +157,7 @@ public:
         }
 
         // Traverse rest of chain
+        long prev = curr;
         curr = rec.next;
 
         while (curr != -1) {
@@ -165,8 +166,24 @@ public:
                 // Mark as deleted
                 rec.valid = 0;
                 writeRecord(curr, rec);
+
+                // We need to update previous valid record's next pointer to skip this deleted record
+                // Find previous valid record
+                long prevValid = prev;
+                while (prevValid != -1) {
+                    Record prevRec = readRecord(prevValid);
+                    if (prevRec.valid == 1) {
+                        // Update its next pointer to skip deleted record
+                        prevRec.next = rec.next;
+                        writeRecord(prevValid, prevRec);
+                        return;
+                    }
+                    prevValid = prevRec.next;
+                }
+                // No previous valid record (shouldn't happen)
                 return;
             }
+            prev = curr;
             curr = rec.next;
         }
     }
