@@ -15,13 +15,13 @@ const int NUM_BUCKETS = 20;  // Max 20 files allowed
 struct Record {
     char index[MAX_INDEX_LEN + 1];
     int value;
-    bool valid;  // true if not deleted
+    char valid;  // 1 if valid, 0 if deleted
 
-    Record() : value(0), valid(true) {
+    Record() : value(0), valid(1) {
         memset(index, 0, sizeof(index));
     }
 
-    Record(const string& idx, int val) : value(val), valid(true) {
+    Record(const string& idx, int val) : value(val), valid(1) {
         strncpy(index, idx.c_str(), MAX_INDEX_LEN);
         index[MAX_INDEX_LEN] = '\0';
     }
@@ -46,8 +46,15 @@ private:
     void loadBucket(int bucket, vector<Record>& records) {
         records.clear();
         string filename = getFilename(bucket);
-        ifstream file(filename, ios::binary);
+        ifstream file(filename, ios::binary | ios::ate);
         if (!file) return;
+
+        streamsize fileSize = file.tellg();
+        if (fileSize <= 0) return;
+
+        file.seekg(0, ios::beg);
+        size_t numRecords = fileSize / sizeof(Record);
+        records.reserve(numRecords);
 
         Record rec;
         while (file.read(reinterpret_cast<char*>(&rec), sizeof(Record))) {
@@ -71,7 +78,7 @@ public:
 
         // Check if already exists
         for (auto& rec : records) {
-            if (rec.valid && strcmp(rec.index, index.c_str()) == 0 && rec.value == value) {
+            if (rec.valid == 1 && strcmp(rec.index, index.c_str()) == 0 && rec.value == value) {
                 return;  // Already exists
             }
         }
@@ -87,8 +94,8 @@ public:
         loadBucket(bucket, records);
 
         for (auto& rec : records) {
-            if (rec.valid && strcmp(rec.index, index.c_str()) == 0 && rec.value == value) {
-                rec.valid = false;  // Mark as deleted
+            if (rec.valid == 1 && strcmp(rec.index, index.c_str()) == 0 && rec.value == value) {
+                rec.valid = 0;  // Mark as deleted
                 saveBucket(bucket, records);
                 return;
             }
@@ -102,6 +109,9 @@ public:
         loadBucket(bucket, records);
 
         vector<int> result;
+        // Reserve space for potential matches
+        result.reserve(records.size() / 10);  // Heuristic
+
         for (const auto& rec : records) {
             if (rec.valid && strcmp(rec.index, index.c_str()) == 0) {
                 result.push_back(rec.value);
